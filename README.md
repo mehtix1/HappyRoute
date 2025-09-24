@@ -30,3 +30,11 @@ sudo apt install -y \
     libxml2 libxml2-dev libgtk-3-dev \
     lxc-utils lxc-templates vtun uml-utilities ebtables bridge-utils \
     libboost-all-dev
+
+## Running  
+
+After installing the prerequisites and cloning the repository, you can start the simulation by running:  
+
+```bash
+sudo ./script.sh
+
