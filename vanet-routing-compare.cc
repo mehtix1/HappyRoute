@@ -2328,7 +2328,7 @@ Ptr<Socket> sink = m_routingHelper->SetupRoutingPacketReceive (adhocTxInterfaces
      { 
          // Realistic vehicular trace in 4.6 km x 3.0 km suburban Zurich 
          // "low density, 99 total vehicles" 
-         m_traceFile = "/home/mehtix/Desktop/mobility.tcl"; 
+         m_traceFile = "../mobility.tcl"; 
          m_logFile = "low99-ct-unterstrass-1day.filt.7.adj.log"; 
          m_mobility = 1; 
          m_nNodes = 20; 
