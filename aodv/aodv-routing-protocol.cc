@@ -2549,7 +2549,7 @@ RoutingProtocol::FindSubnetBroadcastSocketWithInterfaceAddress(Ipv4InterfaceAddr
 void
 RoutingProtocol::DoInitialize()
 {
-        ReadKeysFromFile("/home/mehtix/Desktop/1.txt");
+        ReadKeysFromFile("../1.txt");
 
     // --- START: ADDED CODE FOR AUTOMATIC DEPOSIT ---
 
