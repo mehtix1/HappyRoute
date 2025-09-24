@@ -18,7 +18,7 @@ Before building and running HappyRoute, install the following system packages:
 ```bash
 sudo apt update
 sudo apt install -y \
-    g++ python3 cmake ninja-build git \
+    g++ python3 curl cmake ninja-build git \
     gir1.2-goocanvas-2.0 python3-gi python3-gi-cairo python3-pygraphviz \
     gir1.2-gtk-3.0 ipython3 tcpdump wireshark \
     sqlite3 libsqlite3-dev \
