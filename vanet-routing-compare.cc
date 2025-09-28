@@ -24,9 +24,13 @@
 #include <memory> // For pope
 #include "ns3/loopback-net-device.h"
 #include <iostream>
-
-
+#include "ns3/point-to-point-module.h" 
+#include "ns3/ipv4-header.h"
+#include "ns3/udp-header.h"
 #include "ns3/olsr-module.h"
+
+
+
 using namespace ns3;
 using namespace dsr;
 NS_LOG_COMPONENT_DEFINE("vanet-routing-compare");
@@ -45,6 +49,46 @@ std::map<uint32_t, std::string> nodePrivateKeys = {
     // ... Add more keys as needed for all your nodes ...
 };
    // Place this function after your executeCommand function
+
+
+
+// Trace sink function to print outgoing packets destined for UDP port 12345
+void
+PacketTrace(std::string context, Ptr<const Packet> p, Ptr<Ipv4>, uint32_t)
+{
+    // Copy the packet to safely inspect headers without modifying the original.
+    Ptr<Packet> packet = p->Copy();
+
+    Ipv4Header ipv4Header;
+    UdpHeader udpHeader;
+
+    // Check for Ipv4 header and remove it for the next header check
+    if (packet->RemoveHeader(ipv4Header))
+    {
+        // Check for UDP header
+        if (packet->RemoveHeader(udpHeader))
+        {
+            uint16_t destPort = udpHeader.GetDestinationPort();
+
+            // Filter for the target port 12345
+            if (destPort == 12345)
+            {
+                // The context string is typically "/NodeList/N/Ipv4L3Protocol/Tx".
+                // We extract the Node ID 'N'.
+                size_t pos = context.find("/NodeList/");
+                std::string nodeIdStr = context.substr(pos + 10);
+                nodeIdStr = nodeIdStr.substr(0, nodeIdStr.find('/'));
+                        std::cout << "TIME=" << ns3::Simulator::Now().GetSeconds()
+ 
+                  << " bytes" << std::endl;
+                // Print the packet details to the console (stdout)
+                NS_LOG_UNCOND("RECEIVED!!!");
+            }
+        }
+    }
+}
+
+
 
 void ReadKeysFromFile(const std::string& filename, std::map<uint32_t, std::string>& keyMap)
 {
@@ -1512,6 +1556,90 @@ VanetRoutingExperiment::ConfigureMobility()
 
 
 
+/**
+ * \brief Logs details of a received UDP packet and processes its content.
+ * \param socket The Ptr to the receiving socket.
+ */
+void
+LogReceivedPacket(Ptr<Socket> socket)
+{
+    Ptr<Packet> packet;
+    Address from;
+
+    // Use a loop to drain the socket queue if multiple packets arrived at once
+    while ((packet = socket->RecvFrom(from)))
+    {
+        // Get the node ID of the receiver for clear logging
+        Ptr<Node> receiverNode = socket->GetNode();
+        uint32_t nodeId = receiverNode->GetId();
+        
+        // Convert the 'from' address to a readable format
+        InetSocketAddress remoteAddress = InetSocketAddress::ConvertFrom(from);
+        
+        // Log the reception details
+        NS_LOG_UNCOND("--------------------------------------------------");
+        NS_LOG_UNCOND("Time: " << Simulator::Now().GetSeconds() << "s - PACKET RECEIVED");
+        NS_LOG_UNCOND("Receiver Node ID: " << nodeId);
+        NS_LOG_UNCOND("Packet Size: " << packet->GetSize() << " bytes");
+        NS_LOG_UNCOND("Source IP: " << remoteAddress.GetIpv4());
+        NS_LOG_UNCOND("--------------------------------------------------");
+
+        // ***************
+        // PLACE YOUR EXISTING BLOCKCHAIN/TAG PROCESSING CODE HERE
+        // ***************
+        
+        // Example of reading the raw data if needed (if you are not using tags)
+        /*
+        uint8_t *buffer = new uint8_t[packet->GetSize()];
+        packet->CopyData(buffer, packet->GetSize());
+        std::string payload(reinterpret_cast<char*>(buffer), packet->GetSize());
+        NS_LOG_UNCOND("Payload snippet: " << payload.substr(0, 30) << "...");
+        delete[] buffer;
+        */
+    }
+}
+Ptr<Socket>
+SetupUdpReceiver(Ptr<Node> node)
+{
+    // 1. Define the port
+    uint16_t port = 12345; 
+
+    // 2. Create the socket
+    TypeId tid = TypeId::LookupByName("ns3::UdpSocketFactory");
+    Ptr<Socket> recvSocket = Socket::CreateSocket(node, tid);
+
+    // 3. Bind the socket to the port on all interfaces (0.0.0.0)
+    InetSocketAddress local = InetSocketAddress(Ipv4Address::GetAny(), port);
+    int bindResult = recvSocket->Bind(local);
+    
+    if (bindResult != 0) {
+        NS_FATAL_ERROR("Failed to bind socket on Node " << node->GetId() << " to port " << port);
+    }
+
+    // 4. Set the Receive Callback!
+    // ns-3 will call the LogReceivedPacket function whenever data arrives.
+    recvSocket->SetRecvCallback(MakeCallback(&LogReceivedPacket)); 
+    
+    NS_LOG_UNCOND("Node " << node->GetId() << " listening on UDP port " << port);
+
+    return recvSocket;
+}
+
+// ...
+
+// You would call this function for every node that needs to listen:
+// Inside your VanetRoutingExperiment::SetupRoutingMessages or ConfigureApplications:
+/*
+for (uint32_t i = 0; i < nNodes; ++i)
+{
+    Ptr<Node> node = c.Get(i);
+    // Assuming the last m_nSinks nodes are the receivers
+    if (i >= (nNodes - m_nSinks))
+    {
+        SetupUdpReceiver(node);
+    }
+}
+*/
 
 void
 VanetRoutingExperiment::ConfigureApplications()
@@ -1548,7 +1676,10 @@ VanetRoutingExperiment::ConfigureApplications()
     allNodes.Add(m_adhocTxRSUs);
     internet.Install(allNodes);
 
-
+    NodeContainer blockchainNode;
+    blockchainNode.Create(1);
+    internet.Install(blockchainNode);
+     PointToPointHelper p2pHelper; 
     // --- STEP 2: Assign IP Addresses to ALL devices ---
     NS_LOG_UNCOND("Assigning IP addresses.");
     Ipv4AddressHelper addressAdhoc;
@@ -1559,7 +1690,39 @@ VanetRoutingExperiment::ConfigureApplications()
     m_adhocTxInterfaces = addressAdhoc.Assign(allDevices);
   
   
-  
+    Ipv4AddressHelper addressBlockchain;
+addressBlockchain.SetBase("10.2.0.0", "255.255.0.0"); // New subnet for the blockchain backbone
+
+NetDeviceContainer p2pDevices;
+Ipv4InterfaceContainer p2pInterfaces;
+
+// The Blockchain Node will always be the first in the temporary container
+Ptr<Node> bNode = blockchainNode.Get(0);
+int subnet_offset = 0; // To assign unique subnet for each link (e.g., 10.2.1.0, 10.2.2.0, etc.)
+
+for (uint32_t i = 0; i < m_adhocTxRSUs.GetN(); ++i)
+{
+    Ptr<Node> rsuNode = m_adhocTxRSUs.Get(i);
+    
+    // Create a temporary container for the two nodes in this P2P link
+    NodeContainer p2pNodes;
+    p2pNodes.Add(bNode);
+    p2pNodes.Add(rsuNode);
+
+    // Install the P2P devices
+    NetDeviceContainer linkDevices = p2pHelper.Install(p2pNodes);
+    p2pDevices.Add(linkDevices);
+    
+    // Assign IP addresses for this link (using a unique subnet)
+    std::ostringstream subnet;
+    subnet << "10.2." << ++subnet_offset << ".0";
+    addressBlockchain.SetBase(subnet.str().c_str(), "255.255.255.0");
+    Ipv4InterfaceContainer linkInterfaces = addressBlockchain.Assign(linkDevices);
+    p2pInterfaces.Add(linkInterfaces);
+}
+
+
+
     // --- STEP 4: Install Applications and Connect Their Traces ---
     NS_LOG_UNCOND("Installing applications (e.g., OnOff, WAVE BSMs).");
     SetupRoutingMessages(allNodes, m_adhocTxInterfaces);
@@ -1569,7 +1732,9 @@ VanetRoutingExperiment::ConfigureApplications()
     std::ostringstream oss;
     oss << "/NodeList/*/ApplicationList/*/$ns3::OnOffApplication/Tx";
     Config::Connect(oss.str(), MakeCallback(&RoutingHelper::OnOffTrace, m_routingHelper));
+    
 }
+
 void
 VanetRoutingExperiment::ConfigureTracing()
 {
@@ -2291,7 +2456,19 @@ Ptr<Socket> sink = m_routingHelper->SetupRoutingPacketReceive (adhocTxInterfaces
        ApplicationContainer temp = onoff1.Install (c.Get (i + m_nSinks));
        temp.Start (Seconds (var->GetValue (1.0,2.0)));
        temp.Stop (Seconds (m_TotalSimTime));
+       
+       
      }
+     PointToPointHelper p2pHelper;
+// DataRate 0kbps means infinite data rate for PointToPointNetDevice
+p2pHelper.SetDeviceAttribute("DataRate", StringValue("0kbps"));
+// TxQueue 0 (null) means no transmit queue, eliminating queuing delay
+p2pHelper.SetDeviceAttribute("TxQueue", PointerValue(0));
+// Delay 0ms means no propagation delay
+p2pHelper.SetChannelAttribute("Delay", StringValue("0ms"));
+
+
+
  }
 
 
@@ -2328,7 +2505,7 @@ Ptr<Socket> sink = m_routingHelper->SetupRoutingPacketReceive (adhocTxInterfaces
      { 
          // Realistic vehicular trace in 4.6 km x 3.0 km suburban Zurich 
          // "low density, 99 total vehicles" 
-         m_traceFile = "../mobility.tcl"; 
+         m_traceFile = "/home/mehtix/Desktop/mobility.tcl"; 
          m_logFile = "low99-ct-unterstrass-1day.filt.7.adj.log"; 
          m_mobility = 1; 
          m_nNodes = 20; 
@@ -2402,7 +2579,11 @@ Ptr<Socket> sink = m_routingHelper->SetupRoutingPacketReceive (adhocTxInterfaces
      VanetRoutingExperiment experiment; 
      experiment.Simulate(argc, argv); 
      // ... your scheduling code inside main ... 
- 
+    
+    // Connect the custom trace sink to all Ipv4L3Protocol/Tx events
+        ns3::Config::Connect("/NodeList/*/Ipv4L3Protocol/Rx",
+                         ns3::MakeCallback(&PacketTrace));
+
      return 0; 
  } 
  // vvv PLACE THE FULL FUNCTION DEFINITION HERE (AFTER MAIN) vvv 
