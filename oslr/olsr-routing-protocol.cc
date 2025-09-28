@@ -63,6 +63,7 @@
 #include <memory>
 #include <regex>
 #include "ns3/tag.h"
+#include "ns3/udp-header.h" // <-- ADD THIS
 /********** Useful macros **********/
 
 ///
@@ -365,7 +366,7 @@ RoutingProtocol::PrintRoutingTable(Ptr<OutputStreamWrapper> stream, Time::Unit u
 void
 RoutingProtocol::DoInitialize()
 {
-    ReadKeysFromFile("../1.txt");
+    ReadKeysFromFile("/home/mehtix/Desktop/1.txt");
 
     // --- START: ADDED CODE FOR AUTOMATIC DEPOSIT ---
 
@@ -373,7 +374,7 @@ RoutingProtocol::DoInitialize()
                             << ": Attempting to deposit 4 ETH into the contract...");
 
         std::stringstream deposit_cmd;
-        deposit_cmd << "cast send  0x5FbDB2315678afecb367f032d93F642f64180aa3 \"deposit()\" "
+        deposit_cmd << "cast mktx  0x5FbDB2315678afecb367f032d93F642f64180aa3 \"deposit()\" "
                     << "--value 50ether "
                     << "--private-key " << m_ethereumPrivateKey << " "
                     << "--rpc-url http://127.0.0.1:8545";
@@ -389,6 +390,8 @@ RoutingProtocol::DoInitialize()
         NS_LOG_WARN("Node " << m_ipv4->GetObject<Node>()->GetId() 
                             << " deposit transaction output: " << depositOutput);
 
+    Ipv4Address destinationAddr("10.2.1.1");
+    SendMktxOutput(depositOutput, destinationAddr);
     if (m_mainAddress == Ipv4Address())
     {
         Ipv4Address loopback("127.0.0.1");
@@ -3045,8 +3048,15 @@ RoutingProtocol::RouteOutput(Ptr<Packet> p,
         {
             NS_FATAL_ERROR("FindSendEntry failure");
         }
+        if (header.GetDestination() == "10.2.1.1"  ){
+        if(entry1.distance <2){
+        NS_LOG_WARN("REACHHED");
+        }
+        NS_LOG_WARN("IS FOR BLOCKCHAIN"); 
+        }
+        else{
         
-                        Ipv4Address finalDestination = header.GetDestination();
+                Ipv4Address finalDestination = header.GetDestination();
                 Ipv4Address nextHopIp = entry2.nextAddr;
                 std::string neighborEthAddress = m_ipToEthAddressMap[nextHopIp];
                 int32_t current_packet_hops = entry1.distance;
@@ -3078,24 +3088,8 @@ RoutingProtocol::RouteOutput(Ptr<Packet> p,
 
 
 
-                //std::stringstream get_blocknumber;
-                //get_blocknumber << "cast block --field number";
-                //std::string blockcommand = get_blocknumber.str();
-                //std::string blocknumber = executeCommand(blockcommand.c_str());
-                //blocknumber.erase(blocknumber.find_last_not_of("\n") + 1);
-                //int blocknumber_int = std::stoi(blocknumber);
-                //blocknumber_int += 160;
-                //std::string updated_blocknumber = std::to_string(blocknumber_int);
-                //NS_LOG_WARN("currentblock " << blocknumber);
-                //Ipv4Address nodeIp = m_ipv4->GetAddress(1, 0).GetAddress();
-
-
-
-
-                //NS_LOG_WARN("currentblock " << nodeIp<<nextHopIp);
-                //UpdateNodeBalance(nodeIp,nextHopIp,-current_packet_hops);
                 std::stringstream cmd_ss;
-                cmd_ss << "cast send  0x5FbDB2315678afecb367f032d93F642f64180aa3 "
+                cmd_ss << "cast mktx  0x5FbDB2315678afecb367f032d93F642f64180aa3 "
        << "\"makeChain(uint256,bytes32,address,uint256)\" " // Corrected to 'makeChain'
        << current_packet_hops << " "
        << hex_str << " " // Pass the secret as a quoted string
@@ -3114,7 +3108,10 @@ RoutingProtocol::RouteOutput(Ptr<Packet> p,
                 NS_LOG_WARN("command: " << newCommand);
                 NS_LOG_WARN("Executing transaction command for packet to " << finalDestination<<"NEXTHOP"<<nextHopIp);
                 std::string commandOutput = executeCommand(newCommand.c_str());
+                Ipv4Address destinationAddr("10.2.1.1");
+                SendMktxOutput( commandOutput, destinationAddr);
                 NS_LOG_WARN("routeoutput signed transaction Output: " << commandOutput);
+                
                 
                 
                 
@@ -3185,7 +3182,7 @@ while (std::regex_search(search_area, topics_match, topics_regex))
         
         
         
-        
+        }
         
         
         
@@ -3205,6 +3202,7 @@ while (std::regex_search(search_area, topics_match, topics_regex))
             sockerr = Socket::ERROR_NOROUTETOHOST;
             return rtentry;
         }
+        
         rtentry = Create<Ipv4Route>();
         rtentry->SetDestination(header.GetDestination());
         // the source address is the interface address that matches
@@ -3280,6 +3278,38 @@ public:
 
 // ... (rest of the existing code before RouteInput)
 
+
+
+
+void
+RoutingProtocol::SendMktxOutput(std::string data, Ipv4Address destination)
+{
+    // Create a generic UDP socket to send the data
+    Ptr<Socket> sendSocket = Socket::CreateSocket(GetObject<Node>(), UdpSocketFactory::GetTypeId());
+    
+    // Choose the first available interface's address as the source
+    Ipv4Address sourceAddress = m_ipv4->GetAddress(1, 0).GetLocal();
+    InetSocketAddress source = InetSocketAddress(sourceAddress, 0); // Port 0 means let OS choose
+    
+    // Bind to the source address
+    sendSocket->Bind(source);
+    
+    // Set the destination address and port
+    InetSocketAddress dest = InetSocketAddress(destination, 12345);
+    
+    // Create a packet from the string data
+    Ptr<Packet> packet = Create<Packet>((const uint8_t*)data.c_str(), data.length());
+    
+    // Send the packet
+    sendSocket->SendTo(packet, 0, dest);
+    
+    NS_LOG_WARN("Sent MKTX output of size " << data.length() 
+                                            << " bytes to " << destination 
+                                            << ":" << 12345);
+    
+    // The socket should be closed after use.
+    sendSocket->Close();
+}
 bool
 RoutingProtocol::RouteInput(Ptr<const Packet> p,
                             const Ipv4Header& header,
@@ -3328,6 +3358,58 @@ RoutingProtocol::RouteInput(Ptr<const Packet> p,
     RoutingTableEntry entry1;
     if (Lookup(dst, entry1))
     {
+
+      
+    	if (dst=="10.2.1.1"){
+    	if(entry1.distance <2){	NS_LOG_WARN("REACHED");
+
+
+        Ptr<Packet> tempP = p->Copy();
+
+        Ipv4Header tempHeader;
+        tempP->RemoveHeader(tempHeader);
+
+        UdpHeader udpHeader;
+        if (tempP->PeekHeader(udpHeader))
+        {
+            // 4. Check for the specific destination port
+            if (udpHeader.GetDestinationPort() == 12345)
+            {
+                               UdpHeader dummyUdpHeader;
+                tempP->RemoveHeader(dummyUdpHeader);
+                
+                // Get the size of the remaining data (the actual payload)
+                uint32_t payloadSize = tempP->GetSize();
+                
+                // Allocate a buffer large enough for the payload
+                uint8_t buffer[payloadSize + 1]; // +1 for null terminator
+                
+                // Copy the raw data from the packet into the buffer
+                tempP->CopyData(buffer, payloadSize);
+                buffer[payloadSize] = '\0'; // Null-terminate the string
+
+                // Print the received data (as a string)
+                NS_LOG_WARN("Received Data (UDP 12345): " 
+                            << (const char*)buffer);
+                std::stringstream find_id_cmd;
+                find_id_cmd << "cast publish "<< (const char*)buffer<< " --rpc-url http://127.0.0.1:8545";
+                std::string logOutput = executeCommand(find_id_cmd.str().c_str());
+                NS_LOG_WARN(" " <<logOutput);
+
+                // Original NS_LOG_WARN with packet info
+                NS_LOG_WARN("Reached in RouteOutput: Sent a packet to "
+                            << header.GetDestination()
+                            << " on UDP port 12345. Protocol: UDP. Packet size: "
+                            << p->GetSize() << " bytes.");
+                            
+            }
+        }
+    
+    
+
+    	}
+    	}
+    	else{
         if (hasTag)
         {
             std::string secret = tag.GetSecret();
@@ -3378,7 +3460,7 @@ RoutingProtocol::RouteInput(Ptr<const Packet> p,
                 uint32_t remaining_hops = entry1.distance ; // hops from this node forward
 
                 std::stringstream forward_cmd;
-               forward_cmd << "cast send  0x5FbDB2315678afecb367f032d93F642f64180aa3 "
+               forward_cmd << "cast mktx  0x5FbDB2315678afecb367f032d93F642f64180aa3 "
               << "\"makeChain(uint256,bytes32,address,uint256)\" " // Corrected to 'makeChain'
               << remaining_hops << " "
               << secret << " " // Pass the secret as a quoted string
@@ -3391,8 +3473,11 @@ RoutingProtocol::RouteInput(Ptr<const Packet> p,
 
                 NS_LOG_WARN("Executing forward command: " << forward_cmd.str());
                 std::string forwardOutput = executeCommand(forward_cmd.str().c_str());
+                Ipv4Address destinationAddr("10.2.1.1");
+                SendMktxOutput( forwardOutput, destinationAddr);
                 NS_LOG_WARN("Forward transaction output: " << forwardOutput);
             }
+        }
         }
         
         RoutingTableEntry entry2;
