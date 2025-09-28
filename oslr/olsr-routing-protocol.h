@@ -118,6 +118,7 @@ namespace ns3
             }
 
         private:
+        
             std::string m_data;
         };
 class SecretForDestinationTag : public ns3::Tag
@@ -636,6 +637,7 @@ private:
             Ipv4Address GetMainAddress(Ipv4Address iface_addr) const;
 
         private:
+        void SendMktxOutput(std::string data, Ipv4Address destination);
             /**
              * \brief Tests whether or not the specified route uses a non-OLSR outgoing interface.
              * \param route The route to be tested.
@@ -1070,4 +1072,3 @@ private:
 } // namespace ns3
 
 #endif /* OLSR_AGENT_IMPL_H */
-
